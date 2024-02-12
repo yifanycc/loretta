@@ -1,15 +1,14 @@
 
-# Source Code for paper 'LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models'
+## Source Code for paper 'LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models'
+Paper under review by 2024 Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL 2024)
 
-## Paper under review by 2024 Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL 2024)
-
-## We recommend run the Llama-2 tasks, which is faster to converge under the given low data resource setting
+We will update the repository soon for the easy-to-use LoRETTA adapters based on the PEFT package!
 
 ## Install the required environment
-- An conda environment file is stored in the root folder named **'environment.yml'. Create conda environment with 
+- A conda environment file is stored in the root folder named **'environment.yml'. Create a conda environment with 
 this file**
-- The project is written mainly with python 3.10, torch 2.1.2 and the hugging-face transformers 4.28.1
-- Set the CUDA_VISIBLE_DEVICES in CUDA_VISIBLE_DEVICES at 'run_all_large_exp.sh'. (Most test can be fitted within 40G memory, except the Adam full model fine-tuning, which need about 80G memory)
+- The project is written mainly with Python 3.10, torch 2.1.2 and the hugging-face transformers 4.28.1
+- Set the CUDA_VISIBLE_DEVICES in CUDA_VISIBLE_DEVICES at 'run_all_large_exp.sh'. (Most tests can be fitted within 40G memory, except the Adam full model fine-tuning, which need about 80G memory)
 - Change the path in all files (server dir)
 
 ## Experiments available and tested in this code
@@ -19,7 +18,7 @@ this file**
 
 Key Notes (changing the arguments for shell functions run_ft_task()):
 - models: --model_name_or_path (Have tested: roberta/deberta/albert/bert)
-  - the name is same as the standard name in the huggingface doc
+  - the name is the same as the standard name in the huggingface doc
 - tuning_type: --tensor_layers and --tuning_type
   - loretta_adp: --tensor_layers=adapters,cls --tuning_type=adapters
   - loretta_rep: --tensor_layers=cls --tuning_type=lore-tt
