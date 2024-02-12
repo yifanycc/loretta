@@ -1,5 +1,7 @@
 
-# Source Code for LoRETTA v1
+# Source Code for paper 'LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models'
+
+## Paper under review by 2024 Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL 2024)
 
 ## We recommend run the Llama-2 tasks, which is faster to converge under the given low data resource setting
 
