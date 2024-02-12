@@ -741,7 +741,7 @@ def main():
         # from dotenv import load_dotenv, find_dotenv
         # _ = load_dotenv(find_dotenv())  # read local .env file
         # openai.api_key = os.environ['OPENAI_API_KEY']
-        OPENAI_API_KEY = "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"
+        OPENAI_API_KEY = ""
         openai.api_key = OPENAI_API_KEY
 
         def get_completion_from_messages(messages, model="gpt-4-1106-preview",
