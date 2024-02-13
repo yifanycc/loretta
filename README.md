@@ -2,7 +2,7 @@
 ## Source Code for paper 'LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models'
 Paper under review by 2024 Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL 2024)
 
-We will update the repository soon for the easy-to-use LoRETTA adapters based on the PEFT package!
+We will update the repository soon for the easy-to-use LoRETTA adapters based on the latest PEFT package (the current version is based on an elder version PEFT library)!
 
 ## Install the required environment
 - A conda environment file is stored in the root folder named **'environment.yml'. Create a conda environment with 
