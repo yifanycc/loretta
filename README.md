@@ -42,3 +42,15 @@ The general setup is similar as bert shell file, the experiment use a low-data r
 
 The code is built base on the github repository of paper 'MeZO: Fine-Tuning Language Models with Just Forward Passes' 
 and 'Enabling Lightweight Fine-tuning for Pre-trained Language Model Compression based on Matrix Product Operators'
+
+
+Please cite the following paper if you are interested in our work or would like to use our code:
+
+@misc{yang2024loretta,
+      title={LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models}, 
+      author={Yifan Yang and Jiajun Zhou and Ngai Wong and Zheng Zhang},
+      year={2024},
+      eprint={2402.11417},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL}
+}
