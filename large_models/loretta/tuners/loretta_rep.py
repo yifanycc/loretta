@@ -24,7 +24,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers.pytorch_utils import Conv1D
-from tensor_layers.layers import wrapped_linear_layers
+from ..tensor_layers.layers import wrapped_linear_layers
 
 from ..utils import PeftConfig, PeftType, transpose
 
@@ -42,7 +42,7 @@ class config_class():
         for x in kwargs:
             setattr(self, x, kwargs.get(x))
 @dataclass
-class LoraConfig(PeftConfig):
+class LorettaRepConfig(PeftConfig):
     """
     This is the configuration class to store the configuration of a [`~peft_local_tensor.Lora`].
 
@@ -92,7 +92,7 @@ class LoraConfig(PeftConfig):
         self.peft_type = PeftType.LORA
 
 
-class LoraModel(torch.nn.Module):
+class LorettaRepModel(torch.nn.Module):
     """
     Creates Low Rank Adapter (Lora) model from a pretrained transformers model.
 

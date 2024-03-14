@@ -1,13 +1,20 @@
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=7
 export HF_HOME='/data/public/yifanyang'
 export WANDB_START_METHOD="thread"
-#SST2, RTE, CB, BoolQ, WSC, WIC, MultiRC, Copa, ReCoRD, SQuAD, DROP
-##
-# zo-tuning (LoRA)
-MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=lora LR=1e-4 RANK=8 EPS=1e-3 BS=16 TRAINER=zo bash mezo.sh
-#MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=ft LR=1e-4 RANK=8 EPS=1e-3 BS=16 TRAINER=zo bash mezo.sh
 
+# datasets supported in this code (change in $TASK)
+# SST2, RTE, CB, BoolQ, WSC, WIC, MultiRC, Copa, ReCoRD, SQuAD, DROP
+# PEFT methods supported in this code (change in $MODE)
+# loretta_adp, loretta_rep, lora, adapters (series), prompt, ia3, ptune
 
-# Adam-tuning (FT)
-#MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=lora EPOCH=5 LR=1e-4 RANK=8 EPS=1e-3 BS=16 TRAINER=adam bash finetune.sh
-#MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=ft EPOCH=5 LR=1e-4 RANK=8 EPS=1e-3 BS=16 TRAINER=adam bash finetune.sh
+# test examples (for SST2 task)
+
+#MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=loretta_adp EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
+MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=loretta_rep EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
+#MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=lora EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
+#MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=adapters EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
+#MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=prompt EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
+#MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=ia3 EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
+#
+#
+

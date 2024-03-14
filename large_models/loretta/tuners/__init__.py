@@ -16,10 +16,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from .lora import LoraConfig, LoraModel
-from .lora_tensor import LoraConfig, LoraModel
-from .bottleneck import BottleneckConfig, BottleneckModel
+from .loretta_rep import LorettaRepConfig, LorettaRepModel
+from .loretta_adp import LorettaAdpConfig, LorettaAdpModel
 from .p_tuning import PromptEncoder, PromptEncoderConfig, PromptEncoderReparameterizationType
 from .prefix_tuning import PrefixEncoder, PrefixTuningConfig
 from .prompt_tuning import PromptEmbedding, PromptTuningConfig, PromptTuningInit

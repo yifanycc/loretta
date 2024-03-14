@@ -12,7 +12,7 @@ import torch.nn.functional as F
 
 from ..utils import PeftConfig, PeftType, transpose
 from transformers.activations import ACT2FN
-from tensor_layers.layers import wrapped_linear_layers
+from ..tensor_layers.layers import wrapped_linear_layers
 
 TRANSFORMERS_MODELS_TO_ADAPTER_TYPE_MAPPING = {
     "bloom": {"dense_h_to_4h": "mh_adapter", "dense_4h_to_h": "output_adapter"},
@@ -35,7 +35,7 @@ if is_bnb_available():
     import bitsandbytes as bnb
 
 @dataclass
-class BottleneckConfig(PeftConfig):
+class LorettaAdpConfig(PeftConfig):
     """
     This is the configuration class to store the configuration of a [`~peft_local_tensor.Bottleneck`].
 
@@ -85,7 +85,7 @@ class BottleneckConfig(PeftConfig):
         self.peft_type = PeftType.BOTTLENECK
 
 
-class BottleneckModel(torch.nn.Module):
+class LorettaAdpModel(torch.nn.Module):
     """
     Creates Bottleneck adapter model for a pretrained trainsformers model.
 
@@ -333,6 +333,7 @@ class Linear(nn.Linear, AdapterLayer):
         elif in_features == 8192:
             # tensor_shape = [16, 16, 16, 4, 4, 4]
             tensor_shape_down = [16, 16, 16, 8, 4, 4]
+            [1, 16, 8], [8, 16, 8]
             tensor_shape_up = [4, 4, 8, 16, 16, 16]
         tensor_rank = tensor_rank
         # config_tensor = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)

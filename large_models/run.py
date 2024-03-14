@@ -1,25 +1,14 @@
-import logging
-
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-import torch.nn as nn
 import argparse
-from transformers import TrainerCallback, Trainer, AutoConfig, AutoTokenizer, AutoModelForCausalLM, Trainer, HfArgumentParser, Trainer, TrainingArguments, DataCollatorWithPadding, DataCollatorForTokenClassification
+from transformers import TrainerCallback, Trainer, AutoConfig, AutoTokenizer, AutoModelForCausalLM, HfArgumentParser, TrainingArguments, DataCollatorWithPadding, DataCollatorForTokenClassification
 from tqdm import tqdm
 from tasks import get_task
 import sys
-import json
-import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel as FSDP
 from metrics import calculate_metric
 from utils import *
-from trainer_torch import OurTrainer
 import random
 import wandb
-sys.path.append(os.path.join(os.getcwd(), "peft_local/src/"))
-sys.path.append(os.path.join(os.getcwd(), "peft_local_tensor/src/"))
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
 # from modeling_llama import LlamaForCausalLM
 import torch.optim as optim
@@ -29,7 +18,6 @@ class OurArguments(TrainingArguments):
     task_name: str = "SST2" # task name should match the string before Dataset in the Dataset class name. We support the following task_name: SST2, RTE, CB, BoolQ, WSC, WIC, MultiRC, Copa, ReCoRD, SQuAD, DROP
     overwrite_output_dir: bool = True
     output_dir: str = './trained_models/llama-tt'
-    data_path: str = 'math_50k.json'
     # Number of examples
     num_train: int = 0 # ICL mode: number of demonstrations; training mode: number of training samples
     num_dev: int = None # (only enabled with training) number of development samples
@@ -53,16 +41,14 @@ class OurArguments(TrainingArguments):
 
     # Training
     trainer: str = "none" 
-    ## options
-    ## - none: no training -- for zero-shot or in-context learning (ICL)
-    ## - regular: regular huggingface trainer -- for fine-tuning
-    ## - zo: zeroth-order (MeZO) training
+    # options
+    # - none: no training -- for zero-shot or in-context learning (ICL)
+    # - regular: regular huggingface trainer
+    # - gpt: test the zero-shot pefromance with OpenAI API
     only_train_option: bool = True # whether to only train the option part of the input
     train_as_classification: bool = False # take the log likelihood of all options and train as classification 
 
-    # MeZO
-    zo_eps: float = 1e-3 # eps in MeZO
-
+    # parameter setup for PEFT methods
     # Prefix tuning
     prefix_tuning: bool = False # whether to use prefix tuning
     num_prefix: int = 5 # number of prefixes to use
@@ -92,8 +78,6 @@ class OurArguments(TrainingArguments):
     # Linear probing
     linear_probing: bool = False # whether to do linear probing
     lp_early_stopping: bool = False # whether to do early stopping in linear probing
-    head_tuning: bool = False # head tuning: only tune the LM head
-
     # Untie emb/lm_head weights
     untie_emb: bool = False # untie the embeddings and LM head
 
@@ -151,13 +135,6 @@ class Framework:
                 # Untie embeddings/LM head
                 logger.warn("Untie embeddings and LM head")
                 config.tie_word_embeddings = False
-            if self.args.head_tuning:
-                # Head tuning
-                from ht_opt import OPTForCausalLM
-                model = OPTForCausalLM.from_pretrained(
-                    self.args.model_name,
-                    config=config,
-                )
             elif self.args.no_auto_device:
                 # No auto device (use for FSDP)
                 model = AutoModelForCausalLM.from_pretrained(
@@ -171,7 +148,6 @@ class Framework:
                     torch_dtype = torch.float16
                 elif self.args.load_bfloat16:
                     torch_dtype = torch.bfloat16
-                print(f'data type: {torch_dtype}')
                 model = AutoModelForCausalLM.from_pretrained(
                     self.args.model_name,
                     config=config,
@@ -179,8 +155,6 @@ class Framework:
                     torch_dtype=torch_dtype,
                     load_in_8bit=self.args.load_int8,
                 )
-            for name, param in model.named_parameters():
-                print(f'name {name} param {param.shape}')
             model.eval()
 
         # Load tokenizer
@@ -195,19 +169,11 @@ class Framework:
             tokenizer.pad_token_id = 0 # technically <unk>
 
         # Prefix tuning/LoRA
-        if self.args.prefix_tuning:
+        if self.args.tuning_type == 'prefix':
             from prefix import PrefixTuning
             PrefixTuning(model, num_prefix=self.args.num_prefix, reparam=not self.args.no_reparam, float16=self.args.load_float16, init_by_real_act=self.args.prefix_init_by_real_act)
-        if self.args.lora:
-            from peft_local import (  # noqa: E402
-                LoraConfig,
-                BottleneckConfig,
-                PrefixTuningConfig,
-                get_peft_model,
-                get_peft_model_state_dict,
-                prepare_model_for_int8_training,
-                set_peft_model_state_dict,
-            )
+        if self.args.tuning_type == 'lora':
+            from peft import LoraConfig, get_peft_model
             config = LoraConfig(
                 r=self.args.lora_r,
                 lora_alpha=self.args.lora_alpha,
@@ -217,19 +183,9 @@ class Framework:
                 task_type="CAUSAL_LM",
             )
             model = get_peft_model(model, config)
-            # from lora import LoRA
-            # LoRA(model, r=self.args.lora_r, alpha=self.args.lora_alpha, float16=self.args.load_float16)
-        if self.args.tuning_type == 'lora-tt':
-            from peft_local_tensor import (  # noqa: E402
-                LoraConfig,
-                BottleneckConfig,
-                PrefixTuningConfig,
-                get_peft_model,
-                get_peft_model_state_dict,
-                prepare_model_for_int8_training,
-                set_peft_model_state_dict,
-            )
-            config = LoraConfig(
+        if self.args.tuning_type == 'loretta_rep':
+            from loretta import LorettaRepConfig, get_peft_model
+            config = LorettaRepConfig(
                 r=self.args.lora_r,
                 lora_alpha=self.args.lora_alpha,
                 target_modules=None,
@@ -238,25 +194,13 @@ class Framework:
                 task_type="CAUSAL_LM",
             )
             model = get_peft_model(model, config)
+
             for name, sub_module in model.named_modules():
                 if isinstance(sub_module, (LlamaRMSNorm)):
                     for param_name, param in sub_module.named_parameters():
                         param.requires_grad = True
-        print(f'tuning_type: {self.args.tuning_type}')
         if self.args.tuning_type == 'adapters':
-            from peft_local import (  # noqa: E402
-                LoraConfig,
-                BottleneckConfig,
-                PrefixTuningConfig,
-                get_peft_model,
-                get_peft_model_state_dict,
-                prepare_model_for_int8_training,
-                set_peft_model_state_dict,
-            )
-            #
-            # # print(f'check {model.lm_head.weight.detach().cpu().numpy()}')
-            # model.from_pretrained_tensor()
-            # del model.lm_head
+            from peft_local import BottleneckConfig, get_peft_model  # noqa: E402
             bottleneck_size: int = 64
             non_linearity: str = "relu"
             adapter_dropout: float = 0.0
@@ -280,13 +224,10 @@ class Framework:
                 if isinstance(sub_module, (LlamaRMSNorm)):
                     for param_name, param in sub_module.named_parameters():
                         param.requires_grad = True
-            # for name, param in model.lm_head.named_parameters():
-            #     param.requires_grad = True
         if self.args.tuning_type == 'prompt':
             # from prefix import PrefixTuning
             # PrefixTuning(model, num_prefix=5, reparam=False, float16=False, init_by_real_act=True)
-            from peft_local_tensor import get_peft_config, get_peft_model, PromptTuningInit, PromptTuningConfig, \
-                TaskType, PeftType
+            from peft import get_peft_model, PromptTuningInit, PromptTuningConfig, TaskType
             peft_config = PromptTuningConfig(
                 task_type=TaskType.CAUSAL_LM,
                 prompt_tuning_init=PromptTuningInit.TEXT,
@@ -294,7 +235,6 @@ class Framework:
                 prompt_tuning_init_text="Classify if the tweet is a complaint or not:",
                 tokenizer_name_or_path=self.args.model_name,
             )
-
             model = get_peft_model(model, peft_config)
         if self.args.tuning_type == 'ia3':
             # from prefix import PrefixTuning
@@ -306,32 +246,8 @@ class Framework:
             )
 
             model = get_peft_model(model, peft_config)
-        if self.args.tuning_type == 'bitfit':
-            pass
-            # for name, param in model.named_parameters():
-            #     print(f'name {name} param {param.shape}')
-            #     if 'bias' in name:
-            #         param.requires_grad = True
-            #     else:
-            #         param.requires_grad = False
-        if self.args.tuning_type == 'ptune':
-            from peft_local_tensor import get_peft_config, PeftModel, PeftConfig, get_peft_model, TaskType, \
-                PrefixTuningConfig, PromptEncoderConfig
-            peft_config = PromptEncoderConfig(task_type=TaskType.CAUSAL_LM, num_virtual_tokens=20,
-                                              encoder_hidden_size=128)
-
-            model = get_peft_model(model, peft_config)
-
-        if self.args.tuning_type == 'adapters-cls':
-            from peft_local_tensor import (  # noqa: E402
-                LoraConfig,
-                BottleneckConfig,
-                PrefixTuningConfig,
-                get_peft_model,
-                get_peft_model_state_dict,
-                prepare_model_for_int8_training,
-                set_peft_model_state_dict,
-            )
+        if self.args.tuning_type == 'loretta_adp':
+            from loretta import LorettaAdpConfig, get_peft_model
             #
             # # print(f'check {model.lm_head.weight.detach().cpu().numpy()}')
             # model.from_pretrained_tensor()
@@ -343,7 +259,7 @@ class Framework:
             use_adapterp: bool = False
             target_modules: List[str] = None
             scaling: Union[float, str] = 1.0
-            config = BottleneckConfig(
+            config = LorettaAdpConfig(
                 bottleneck_size=bottleneck_size,
                 non_linearity=non_linearity,
                 adapter_dropout=adapter_dropout,
@@ -361,18 +277,7 @@ class Framework:
                 if isinstance(sub_module, (LlamaRMSNorm)):
                     for param_name, param in sub_module.named_parameters():
                         param.requires_grad = True
-            # for name, param in model.lm_head.named_parameters():
-            #     param.requires_grad = True
-        if self.args.head_tuning:
-            if model.config.model_type == "opt":
-                head_name = "lm_head" if self.args.untie_emb else "embed_tokens"
-            else:
-                raise NotImplementedError
-            for n, p in model.named_parameters():
-                if head_name not in n:
-                    p.requires_grad = False
-                else:
-                    logger.info(f"Only tuning {n}")
+        # print the name and shape of trainable parameters
         for name, param in model.named_parameters():
             if param.requires_grad:
                 print(f"{name}: {param.shape} parameters")
@@ -631,39 +536,13 @@ class Framework:
                         wandb.log({f"mean_{idx}": weight_mean, "epoch": state.epoch})
                         model.train()
 
-        class ChangeOptimizerCallback(TrainerCallback):
-            """A callback that changes the optimizer at a specific step."""
-
-            def __init__(self, change_step=2500, new_optimizer_cls=optim.AdamW, **new_optimizer_kwargs):
-                self.change_step = change_step
-                self.new_optimizer_cls = new_optimizer_cls
-                self.new_optimizer_kwargs = new_optimizer_kwargs
-                self.optimizer_changed = False
-
-            def on_step_end(self, args, state, control, **kwargs):
-                if state.global_step == self.change_step and not self.optimizer_changed:
-                    # Change the optimizer
-                    print(f"Changing optimizer at step {state.global_step}")
-                    model = kwargs['model']
-                    new_optimizer = self.new_optimizer_cls(model.parameters(), **self.new_optimizer_kwargs)
-                    trainer.optimizer = new_optimizer
-                    self.optimizer_changed = True
-        # optimizer = torch.optim.SGD(self.model.parameters(), lr=self.args.learning_rate)
-        trainer = OurTrainer(
+        trainer = Trainer(
             model=self.model,
             args=self.args,
             train_dataset=train_dataset, 
             eval_dataset=eval_dataset,
             tokenizer=self.tokenizer,
-            # optimizers=optimizer,
-            # data_collator=transformers.DataCollatorForSeq2Seq(
-            #     tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True
-            # ),
             data_collator=DataCollatorWithPaddingAndNesting(self.tokenizer, pad_to_multiple_of=8) if self.args.train_as_classification else collator(self.tokenizer, pad_to_multiple_of=8),
-            callbacks=[ChangeOptimizerCallback(change_step=2500, lr=self.args.learning_rate)]  # Customize the new optimizer settings
-            # callbacks=[LogLinearLayerWeightsCallback()]
-            # callbacks=[AdjustLRCallback(2500, 1e-6)],
-            # compute_metrics=build_compute_metrics_fn(self.task, [], eval_samples, False),
         )
 
         if self.args.save_on_interrupt:
@@ -724,23 +603,18 @@ def main():
     train_sets = task.sample_train_sets(num_train=args.num_train, num_dev=args.num_dev, num_eval=args.num_eval, num_train_sets=args.num_train_sets, seed=args.train_set_seed)
     wandb_run_name = str(args.task_name) + '-' + str(args.model_name.replace('/', '-')) + '-' \
                      + str(args.learning_rate) + '-' \
-                     + str(args.tuning_type) + '-lorar-' + str(args.lora_r)
-    wandb.init(project="<llama-zo>", name=wandb_run_name)
+                     + str(args.tuning_type.replace('_', '-')) + '-rank-' + str(args.lora_r)
+    wandb.init(project="<camera-ready>", name=wandb_run_name)
     # Initialize trainer and load model
     if args.trainer == 'gpt':
-        # For each eval sample, there is a training set. no training is allowed
-        # This is for in-context learning (ICL)
+        # zero-shot training with openai API
         print(f'Prediction with openai API')
-        import os
         import openai
         import csv
         from message import build_message
         test_samples = task.sample_subset(data_split="valid", seed=args.train_set_seed, num=args.num_eval)
         for eval_id, eval_sample in enumerate(tqdm(test_samples)):
             print(f'Evaluating {eval_id} Eval_sample {eval_sample}')
-        # from dotenv import load_dotenv, find_dotenv
-        # _ = load_dotenv(find_dotenv())  # read local .env file
-        # openai.api_key = os.environ['OPENAI_API_KEY']
         OPENAI_API_KEY = ""
         openai.api_key = OPENAI_API_KEY
 
@@ -755,9 +629,6 @@ def main():
             return response.choices[0].message["content"]
 
         test_samples = task.sample_subset(data_split="valid", seed=args.train_set_seed, num=args.num_eval)
-        # for eval_id, eval_sample in enumerate(tqdm(test_samples)):
-        #     print(f'test sample {eval_sample}')
-
         # Prediction loop
         predictions = []
         labels = []
@@ -776,6 +647,7 @@ def main():
         # metrics = {metric_name: calculate_metric(predictions, metric_name)}
         # return metrics
     else:
+        # training with huggingface trainer
         framework = Framework(args, task)
         if args.train_set_seed is not None or args.num_train_sets is not None:
             # Eval samples share one (or multiple) training set(s)

@@ -11,20 +11,22 @@ DEV=${DEV:-500}
 EVAL=${EVAL:-1000}
 RANK=${RANK:-8}
 MODE=${MODE:-ft}
+DEVICE=${DEVICE:-0}
 TRAINER=${TRAINER:-regular}
+export CUDA_VISIBLE_DEVICES=$DEVICE
 EXTRA_ARGS=""
 if [ "$MODE" == "prefix" ]; then
-    EXTRA_ARGS="--prefix_tuning --num_prefix 5 --no_reparam --prefix_init_by_real_act"
+    EXTRA_ARGS="--num_prefix 5 --no_reparam --prefix_init_by_real_act"
     TYPE="prefix"
 elif [ "$MODE" == "lora" ]; then
     EXTRA_ARGS="--lora"
     TYPE="lora"
-elif [ "$MODE" == "lora-tt" ]; then
-    TYPE="lora-tt"
+elif [ "$MODE" == "loretta_rep" ]; then
+    TYPE="loretta_rep"
 elif [ "$MODE" == "adapters" ]; then
     TYPE="adapters"
-elif [ "$MODE" == "adapters-cls" ]; then
-    TYPE="adapters-cls"
+elif [ "$MODE" == "loretta_adp" ]; then
+    TYPE="loretta_adp"
 elif [ "$MODE" == "prompt" ]; then
     TYPE="prompt"
 elif [ "$MODE" == "bitfit" ]; then
