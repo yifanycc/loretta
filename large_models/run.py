@@ -2,7 +2,6 @@ import argparse
 from transformers import TrainerCallback, Trainer, AutoConfig, AutoTokenizer, AutoModelForCausalLM, HfArgumentParser, TrainingArguments, DataCollatorWithPadding, DataCollatorForTokenClassification
 from tqdm import tqdm
 from tasks import get_task
-import sys
 from torch.utils.data import Dataset
 from torch.distributed.fsdp.fully_sharded_data_parallel import FullyShardedDataParallel as FSDP
 from metrics import calculate_metric
@@ -10,8 +9,8 @@ from utils import *
 import random
 import wandb
 from transformers.models.llama.modeling_llama import LlamaRMSNorm
-# from modeling_llama import LlamaForCausalLM
-import torch.optim as optim
+
+
 @dataclass
 class OurArguments(TrainingArguments):
     # dataset and sampling strategy
@@ -49,6 +48,18 @@ class OurArguments(TrainingArguments):
     train_as_classification: bool = False # take the log likelihood of all options and train as classification 
 
     # parameter setup for PEFT methods
+    # LoRETTA
+    tensor_rank: int = 5
+    target_modules: List[str] = None # set to be None when use official support model
+    task_type: str = 'CAUSAL_LM' # choose from "SEQ_CLS", "SEQ_2_SEQ_LM", "CAUSAL_LM", "TOKEN_CLS"
+    # LoRETTA_adp
+    adp_bottleneck: int = 64
+    non_linearity: str = "relu"
+    adapter_dropout: float = 0.0
+    scaling: Union[float, str] = 1.0
+    # LoRETTA_rep
+    rep_bottleneck: int = 8
+    rep_alpha: int = 16
     # Prefix tuning
     prefix_tuning: bool = False # whether to use prefix tuning
     num_prefix: int = 5 # number of prefixes to use
@@ -57,7 +68,6 @@ class OurArguments(TrainingArguments):
     rank: int = 5
     # LoRA
     tuning_type: str = 'ft'
-    lora: bool = False # whether to use LoRA
     lora_alpha: int = 16 # alpha in LoRA
     lora_r: int = 8 # r in LoRA
 
@@ -186,12 +196,13 @@ class Framework:
         if self.args.tuning_type == 'loretta_rep':
             from loretta import LorettaRepConfig, get_peft_model
             config = LorettaRepConfig(
-                r=self.args.lora_r,
-                lora_alpha=self.args.lora_alpha,
-                target_modules=None,
+                r=self.args.rep_bottleneck,
+                lora_alpha=self.args.rep_alpha,
+                target_modules=self.args.target_modules,
                 lora_dropout=0.05,
                 bias="none",
-                task_type="CAUSAL_LM",
+                task_type=self.args.task_type,
+                tensor_rank=self.args.tensor_rank
             )
             model = get_peft_model(model, config)
 
@@ -248,35 +259,17 @@ class Framework:
             model = get_peft_model(model, peft_config)
         if self.args.tuning_type == 'loretta_adp':
             from loretta import LorettaAdpConfig, get_peft_model
-            #
-            # # print(f'check {model.lm_head.weight.detach().cpu().numpy()}')
-            # model.from_pretrained_tensor()
-            # del model.lm_head
-            bottleneck_size: int = 64
-            non_linearity: str = "relu"
-            adapter_dropout: float = 0.0
-            use_parallel_adapter: bool = False
-            use_adapterp: bool = False
-            target_modules: List[str] = None
-            scaling: Union[float, str] = 1.0
-            config = LorettaAdpConfig(
-                bottleneck_size=bottleneck_size,
-                non_linearity=non_linearity,
-                adapter_dropout=adapter_dropout,
-                use_parallel_adapter=use_parallel_adapter,
-                use_adapterp=use_adapterp,
-                target_modules=target_modules,
-                scaling=scaling,
+            peft_config = LorettaAdpConfig(
+                bottleneck_size=self.args.adp_bottleneck,
+                non_linearity=self.args.non_linearity,
+                adapter_dropout=self.args.adapter_dropout,
+                target_modules=self.args.target_modules,
+                scaling=self.args.scaling,
                 bias="none",
-                task_type="CAUSAL_LM",
-                tensorized=True,
-                tensor_rank=self.args.rank,
+                task_type=self.args.task_type,
+                tensor_rank=self.args.tensor_rank,
             )
-            model = get_peft_model(model, config)
-            for name, sub_module in model.named_modules():
-                if isinstance(sub_module, (LlamaRMSNorm)):
-                    for param_name, param in sub_module.named_parameters():
-                        param.requires_grad = True
+            model = get_peft_model(model, peft_config)
         # print the name and shape of trainable parameters
         for name, param in model.named_parameters():
             if param.requires_grad:

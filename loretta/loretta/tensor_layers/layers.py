@@ -1,19 +1,9 @@
-from ctypes import Union
 import math
-from re import M
 import torch
 import numpy as np
 import torch.nn as nn
-import torch.nn.functional as F
 from .low_rank_tensors import TensorTrain, TensorTrainMatrix
 from .utils import config_class, quantize, TT_forward_quant
-from .emb_utils import get_cum_prod, tensorized_lookup, TTM_lookup_LP
-# from .tt_fwd_bwd import TT_forward_quant
-
-
-# from qtorch.quant import fixed_point_quantize, block_quantize, float_quantize
-# from ..common_types import _size_1_t, _size_2_t, _size_3_t
-
 
 
 class wrapped_linear_layers(nn.Module):
@@ -31,6 +21,7 @@ class wrapped_linear_layers(nn.Module):
         else:
             return self.layer(input)
 
+
 class TensorizedLinear_module(nn.Module):
     def __init__(self,
                 in_features,
@@ -44,31 +35,21 @@ class TensorizedLinear_module(nn.Module):
         ranks: either a number or a list of numbers to specify the ranks 
         set_scale_factors: True or False
         """
-    
 
         super(TensorizedLinear_module,self).__init__()
-
         self.config = config
-
-
-
         self.in_features = in_features
         self.out_features = out_features
         target_stddev = np.sqrt(1/(self.in_features+self.out_features))
-
         config_tensor = config_class(shape=config.shape,ranks=config.ranks,target_sdv=target_stddev)
-
-        #shape taken care of at input time
+        # shape taken care of at input time
         self.tensor = TensorTrain(config_tensor)
-        
         self.tensor_shape = config.shape
 
         if bias == False:
             self.bias = 0
         else:
             stdv = 1. / math.sqrt(out_features)
-            # self.bias = torch.nn.Parameter(torch.zeros(out_features))
-            # self.bias.data.uniform_(-stdv, stdv)
             self.bias = torch.nn.Parameter(torch.randn(out_features))
             self.bias.data.uniform_(-stdv, stdv)
         
@@ -202,19 +183,5 @@ class TensorizedLinear_module(nn.Module):
         output = input_mat @ out.reshape(self.in_features, self.out_features)
         return output
 
-    # def forward_tt_full_precision(self, input_mat, tensor_set):
-    #     """
-    #     shirnk the bond dimension to tranfer an tensor format to matrix format
-    #     :param tensor_set: the input tensor format
-    #     :return: the matrix format
-    #     """
-    #     t = tensor_set[0]
-    #     num_dim = len(tensor_set)
-    #     # print(t.shape, tensor_set[1].shape)
-    #     for i in range(1, num_dim):
-    #         t = torch.tensordot(t, tensor_set[i], ([len(t.shape) - 1], [0]))
-    #     t = t.reshape(self.in_features, self.out_features)
-    #     output = input_mat @ t
-    #     return output
 
 

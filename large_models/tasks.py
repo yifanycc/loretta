@@ -47,7 +47,7 @@ class Dataset:
     def get_task_name(self):
         return self.subtask
         
-    def load_dataset():
+    def load_dataset(self):
         raise NotImplementedError
     
     def get_template(self, template_version=0):

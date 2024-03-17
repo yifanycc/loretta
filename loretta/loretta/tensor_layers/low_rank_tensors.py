@@ -1,19 +1,7 @@
-#%%
-import torch 
+import torch
 import math
 
 
-# class config_tensor:
-#     def __init__(self,
-#                 shape = None,
-#                 ranks = None,
-#                 target_sdv = 1.0,
-#                 **kwargs):
-#         self.shape = shape
-#         self.ranks = ranks
-#         self.target_sdv = target_sdv
-#         for x in kwargs:
-#             setattr(self, x, kwargs.get(x))
 
 class TensorTrain(torch.nn.Module):
     def __init__(self,config):

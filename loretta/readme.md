@@ -1,8 +1,6 @@
-<p align="center">
-  <img src="logo.png" alt="LoRETTA">
-</p>
+# LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models
+Yifan Yang, Jiajun Zhou, Ngai Wong, Zheng Zhang
 
-# Source Code for paper 'LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models'
 2024 Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL 2024)
 
 ---
@@ -14,23 +12,11 @@ method is suggested to be used in most case, providing on-par or better accuracy
 LoRETTA_rep, instead, provided an ultra parameter efficient method that may be beneficial for the future harware design,
 which shows superior performance on medium size LLMs like Roberta/Deberta models, while reduce the trainable paraemters to
 a great extent. Our implementation is based on the latest huggingface [PEFT](https://github.com/huggingface/peft) package, 
-which could be easily plugged-in for most widely used models (see Quickstart and Model Support sections). 
-
-<h1> <p>🤗 News</p></h1>
-
-03/17/2023: The version 0.1.0 package of loretta methods is out, which helps to implement
-the LoRETTA_adp and LoRETTA_rep methods with lines of code. Try it by installing with `pip install loretta`
-
-3/14/2023: Our paper 'LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models'
-has been accepted by the NAACL 2024 main conference
-
-02/20/2023: The draft code for reproducing experiments in LoRETTA paper is out. 
-
+which could be easily plugged-in for most widely used models (see Quickstart and Model Support sections).
 
 Quickstart
 ---
-
-Install loretta from pip (require python>3.6, torch>2.0.0, and transformers>4.0.0):
+Install loretta from pip:
 
 ```angular2html
 pip install loretta
@@ -91,26 +77,12 @@ want to customize for your model, check the specific setting in `utils/tensor_ut
 
 Officialy, we have tested on **Deberta (base)**, Roberta (base/large), OPT (1.3B/2.7B/6.7B) and **llama-2 (7B/13B/70B)**.
 
-Note that the loretta library currently only tested under the FP32 datatype.
 
 Environment
 ---
 Generally, the package is implemented base on `torch==2.1.2`, `python=3.10.13` and `transformers==4.38.2`. For a detailed
 list of environments we use, check `requirements.txt` or `environment.yml` files we provided.
 
-Detailed Examples
----
-We provide two detailed examples to reproduce the experimental results in our paper, which are stored in folder `bert_model`
-and `large_models`. To reproduce our experiments, following the instructions below:
-
-- Create the environment with the provided file `requirements.txt` or `environment.yml`
-- setup the parameters in `run_all_bert_exp.sh` or `run_all_large_exp.sh` in each folder, which mainly contains:
-  - MODEL: the name of the huggingface enabled model
-  - TASK: the name of the datasets, which support `MNLI, SST2, COLA, QQP, QNLI, RTE, MRPC, STSB` for bert tests and 
-  `SST2, RTE, CB, BoolQ, WSC, WIC, MultiRC, Copa, ReCoRD, SQuAD, DROP` for llama tests
-  - EPOCH/BS/LR: basic training argument for epochs, batch_size and learning_rate
-  - DEVICE: the number of cuda device you would like to use `export CUDA_VISIBLE_DEVICES=$DEVICE`
-  - For other arguments needed for the experiments, see `finetune.sh` for detail
 
 Cite our paper
 ---
@@ -127,3 +99,5 @@ To use loretta in your publication, please cite it by using the following BibTeX
       primaryClass={cs.CL}
 }
 ```
+
+For more questions, feel free to contact me at `yifanycc@gmail.com` or `yifanycc@gmail.com`.

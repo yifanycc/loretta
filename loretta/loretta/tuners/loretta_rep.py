@@ -493,8 +493,6 @@ class MergedLinear(nn.Linear, LoraLayer):
             if self.r > 0:
                 after_A = self.lora_A(self.lora_dropout(x))
                 after_B = self.lora_B(after_A)
-                # result += self.zero_pad(after_B) * self.scaling
-                # print(f'check {after_B[0] * self.scaling}')
                 result += after_B * self.scaling
         result = result.to(previous_dtype)
 

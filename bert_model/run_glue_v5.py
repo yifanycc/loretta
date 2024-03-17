@@ -25,18 +25,6 @@ initial_memory_allocated = torch.cuda.memory_allocated()
 initial_memory_cached = torch.cuda.memory_cached()
 
 
-task_to_keys = {
-    "cola": ("sentence", None),
-    "mnli": ("premise", "hypothesis"),
-    "mrpc": ("sentence1", "sentence2"),
-    "qnli": ("question", "sentence"),
-    "qqp": ("question1", "question2"),
-    "rte": ("sentence1", "sentence2"),
-    "sst-2": ("sentence", None),
-    "sts-b": ("sentence1", "sentence2"),
-    "wnli": ("sentence1", "sentence2"),
-}
-
 # Initialize the argument dataclass
 @dataclass
 class ModelArguments:
@@ -59,10 +47,7 @@ class ModelArguments:
 
 @dataclass
 class OurArguments(TrainingArguments):
-    run_name: str = 'T-adapters'
-    trainer: str = field(default='zo', metadata={"help": "which gpu to use"})
     # dataset and sampling strategy
-    # task_name: str = "SST2"  # task name should match the string before Dataset in the Dataset class name. We support the following task_name: SST2, RTE, CB, BoolQ, WSC, WIC, MultiRC, Copa, ReCoRD, SQuAD, DROP
     evaluate_during_training: bool = True
     logging_steps: int = 1000
     lr_scheduler_type: str = 'constant'
@@ -75,73 +60,28 @@ class OurArguments(TrainingArguments):
     )
     wandb_project: str = "camera-ready"
     logging_dir: str = "./logs/" + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    sfc: bool = False  # whether to use SFC calibration
-    icl_sfc: bool = False  # whether to use SFC calibration for ICL samples
-    only_train_option: bool = True  # whether to only train the option part of the input
-    train_as_classification: bool = (
-        False  # take the log likelihood of all options and train as classification
-    )
 
-    # MeZO
-    zo_eps: float = 1e-3  # eps in MeZO
-
-    # Prefix tuning
-    prefix_tuning: bool = False  # whether to use prefix tuning
-    num_prefix: int = 5  # number of prefixes to use
-    no_reparam: bool = True  # do not use reparameterization trick
-    prefix_init_by_real_act: bool = (
-        True  # initialize prefix by real activations of random words
-    )
-    load_best_model_at_end: bool = True
-    # fine-tuning type (ft/lora/adapters)
+    # parameter setup for PEFT methods
     tuning_type: str = 'ft'
+    # LoRETTA
+    tensor_rank: int = 5
+    target_modules: List[str] = None  # set to be None when use official support model
+    task_type: str = 'SEQ_CLS'  # choose from "SEQ_CLS", "SEQ_2_SEQ_LM", "CAUSAL_LM", "TOKEN_CLS"
+    # LoRETTA_adp
+    adp_bottleneck: int = 64
+    non_linearity: str = "relu"
+    adapter_dropout: float = 0.0
+    scaling: Union[float, str] = 1.0
+    # LoRETTA_rep
+    rep_bottleneck: int = 8
+    rep_alpha: int = 16
     # LoRA
-    lora: bool = False  # whether to use LoRA
     lora_alpha: int = 16  # alpha in LoRA
     lora_r: int = 8  # r in LoRA
-    lora_tensor: bool = False
 
     adapter_size: int = 64
     tensor_shape_opt: int = 0
-    tensor_rank: int = 5
     report_to: str = "wandb"
-    # Generation
-    sampling: bool = False  # whether to use sampling
-    temperature: float = 1.0  # temperature for generation
-    num_beams: int = 1  # number of beams for generation
-    top_k: int = None  # top-k for generation
-    top_p: float = 0.95  # top-p for generation
-    max_new_tokens: int = 50  # max number of new tokens to generate
-    eos_token: str = "\n"  # end of sentence token
-
-    # Saving
-    save_model: bool = False  # whether to save the model
-    no_eval: bool = False  # whether to skip evaluation
-    tag: str = ""  # saving tag
-
-    # Linear probing
-    linear_probing: bool = False  # whether to do linear probing
-    lp_early_stopping: bool = False  # whether to do early stopping in linear probing
-    head_tuning: bool = False  # head tuning: only tune the LM head
-
-    # Untie emb/lm_head weights
-    untie_emb: bool = False  # untie the embeddings and LM head
-
-    # Display
-    verbose: bool = False  # verbose output
-
-    # Non-diff objective
-    non_diff: bool = (
-        False  # use non-differentiable objective (only support F1 for SQuAD for now)
-    )
-
-    # Auto saving when interrupted
-    save_on_interrupt: bool = (
-        False  # save model when interrupted (useful for long training)
-    )
-    # tensor related
-    device_no: str = field(default='3', metadata={"help": "which gpu to use"})
-    tensor_layers: str = field(default='word_embed,attention', metadata={"help": "layers need to use tensor format"})
 
 
 def get_parameter_number(net):
@@ -171,58 +111,17 @@ def main():
             f"Output directory ({our_args.output_dir}) already exists and is not empty. Use --overwrite_output_dir to overcome."
         )
 
-
-    # Setup logging
-    logging.basicConfig(
-        format="%(asctime)s - %(levelname)s - %(name)s -   %(message)s",
-        datefmt="%m/%d/%Y %H:%M:%S",
-        level=logging.INFO if our_args.local_rank in [-1, 0] else logging.WARN,
-    )
-    logger.warning(
-        "Process rank: %s, device: %s, n_gpu: %s, distributed training: %s, 16-bits training: %s",
-        our_args.local_rank,
-        our_args.device,
-        our_args.n_gpu,
-        bool(our_args.local_rank != -1),
-        our_args.fp16,
-    )
-    logger.info("Training/evaluation parameters %s", our_args)
     wandb_run_name = str(data_args.task_name) + '-' + str(model_args.model_name_or_path.replace('/', '-')) + '-' \
-                     + str(our_args.learning_rate) + '-' + str(our_args.tensor_layers.replace(',', '-')) + '-' \
+                     + str(our_args.learning_rate)  + '-' \
                      + str(our_args.tuning_type) + '-lorar-' + str(our_args.tensor_rank) + '-' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     wandb.init(project=f"<{our_args.wandb_project}>", name=wandb_run_name)
     set_seed(our_args.seed)
-    task_name_map = {
-        'sst2': 'sst-2',
-        'stsb': 'sts-b',
-        'mnli': 'mnli',
-        'cola': 'cola',
-        'qqp': 'qqp',
-        'qnli': 'qnli',
-        'pte': 'rte',
-        'mrpc': 'mrpc',
-    }
-    data_args.task_name = task_name_map[data_args.task_name]
 
-    try:
-        num_labels = glue_tasks_num_labels[data_args.task_name]
-        output_mode = glue_output_modes[data_args.task_name]
-    except KeyError:
-        raise ValueError("Task not found: %s" % (data_args.task_name))
-
-
-    # stacking all config together
+    # load pretrained model and wrapping model with PEFT methods
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
     )
-    # custom_config = our_args.__dict__
-    # for k, v in custom_config.items():
-    #     setattr(config, k, v)
-    # config.batch_size = our_args.per_device_train_batch_size
-    # config.max_seq_length = data_args.max_seq_length
-    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
 
-    # load pretrained model
     model = AutoModelForSequenceClassification.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -232,35 +131,25 @@ def main():
     if our_args.tuning_type == 'loretta_rep':
         from loretta import LorettaRepConfig, get_peft_model, TaskType
         peft_config = LorettaRepConfig(
-            r=our_args.lora_r,
-            lora_alpha=our_args.lora_alpha,
-            target_modules=None,
+            r=our_args.rep_bottleneck,
+            lora_alpha=our_args.rep_alpha,
+            target_modules=our_args.target_modules,
             lora_dropout=0.05,
             bias="none",
-            task_type=TaskType.SEQ_CLS,
-            enable_lora=None
+            task_type=our_args.task_type,
+            tensor_rank=our_args.tensor_rank
         )
         model = get_peft_model(model, peft_config)
     if our_args.tuning_type == 'loretta_adp':
         from loretta import get_peft_model, LorettaAdpConfig, TaskType
-        bottleneck_size: int = 64
-        non_linearity: str = "relu"
-        adapter_dropout: float = 0.0
-        use_parallel_adapter: bool = False
-        use_adapterp: bool = False
-        target_modules: List[str] = None
-        scaling: Union[float, str] = 1.0
         peft_config = LorettaAdpConfig(
-            bottleneck_size=bottleneck_size,
-            non_linearity=non_linearity,
-            adapter_dropout=adapter_dropout,
-            use_parallel_adapter=use_parallel_adapter,
-            use_adapterp=use_adapterp,
-            target_modules=target_modules,
-            scaling=scaling,
+            bottleneck_size=our_args.adp_bottleneck,
+            non_linearity=our_args.non_linearity,
+            adapter_dropout=our_args.adapter_dropout,
+            target_modules=our_args.target_modules,
+            scaling=our_args.scaling,
             bias="none",
-            task_type=TaskType.SEQ_CLS,
-            tensorized=True,
+            task_type=our_args.task_type,
             tensor_rank=our_args.tensor_rank,
         )
         model = get_peft_model(model, peft_config)
@@ -316,14 +205,25 @@ def main():
         peft_config = PromptEncoderConfig(task_type="SEQ_CLS", num_virtual_tokens=100, encoder_hidden_size=128)
         model = get_peft_model(model, peft_config)
 
-    # process the dataset
     logger.info("Total Parameter Count: {}M".format(model.num_parameters() / 1000 / 1000))
     logger.info("Total and trainable params: {}".format(str(get_parameter_number(model))))
 
 
-    # Get datasets
+    # process the dataset
+    tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
+    task_name_map = {
+        'sst2': 'sst-2',
+        'stsb': 'sts-b',
+        'mnli': 'mnli',
+        'cola': 'cola',
+        'qqp': 'qqp',
+        'qnli': 'qnli',
+        'pte': 'rte',
+        'mrpc': 'mrpc',
+    }
+    data_args.task_name = task_name_map[data_args.task_name]
+    output_mode = glue_output_modes[data_args.task_name]
     dataset = load_dataset("glue", data_args.task_name.replace("-", ""))
-        # Labels
     if data_args.task_name is not None:
         is_regression = data_args.task_name == "sts-b"
         if not is_regression:
@@ -342,7 +242,17 @@ def main():
             label_list = dataset["train"].unique("label")
             label_list.sort()  # Let's sort it for determinism
             num_labels = len(label_list)
-    # Preprocessing the datasets
+    task_to_keys = {
+        "cola": ("sentence", None),
+        "mnli": ("premise", "hypothesis"),
+        "mrpc": ("sentence1", "sentence2"),
+        "qnli": ("question", "sentence"),
+        "qqp": ("question1", "question2"),
+        "rte": ("sentence1", "sentence2"),
+        "sst-2": ("sentence", None),
+        "sts-b": ("sentence1", "sentence2"),
+        "wnli": ("sentence1", "sentence2"),
+    }
     sentence1_key, sentence2_key = task_to_keys[data_args.task_name]
 
      # Some models have set the order of the labels to use, so let's make sure we do use it.
@@ -376,7 +286,6 @@ def main():
         model.config.label2id = {l: i for i, l in enumerate(label_list)}
         model.config.id2label = {id: label for label, id in config.label2id.items()}
 
-
     def tokenize_function(examples):
                 # Tokenize the texts
         texts = (
@@ -403,7 +312,7 @@ def main():
         subset_size = 1000  # Change this to the desired size of your subset
         eval_dataset = eval_dataset.shuffle(seed=our_args.seed).select([i for i in range(subset_size)])
 
-
+    # Initialized trainer and evaluation function
     def build_compute_metrics_fn(task_name: str) -> Callable[[EvalPrediction], Dict]:
         def compute_metrics_fn(p: EvalPrediction):
             if output_mode == "classification":
@@ -421,15 +330,13 @@ def main():
         eval_dataset=eval_dataset,
         compute_metrics=build_compute_metrics_fn(data_args.task_name),
     )
+
     # Training
     model.eval()
     memory_used_after_part = torch.cuda.memory_allocated() - initial_memory_allocated
     print(f"Memory used after the specific part: {memory_used_after_part / (1024 ** 2)} MB")
     if our_args.do_train:
         trainer.train()
-        # model.config.__cached__setup_devices = None
-        # print(model.config.to_dict())
-
         trainer.save_model()
         if trainer.is_world_process_zero():
             tokenizer.save_pretrained(our_args.output_dir)
