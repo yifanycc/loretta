@@ -40,8 +40,7 @@ pip install loretta
 
 Here is a quick example about how to use the loretta package to wrap a huggingface style model with the LoRETTA adapters,
 by using the provided `LorettaAdpConfig`,  `LorettaRepConfig`, and `get_peft_model` classes and functions. The general usage
-follows the similar logic as the PEFT library. For further introduction about this package, refer to the examples on
-bert and llama models at the [official loretta repositories](https://github.com/yifanycc/loretta).
+follows the similar logic as the PEFT library. 
 
 
 For LoRETTA_adp (we recommend LoRETTA_adp for most cases):
