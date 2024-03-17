@@ -5,6 +5,8 @@
 # Source Code for paper 'LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models'
 2024 Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL 2024)
 
+Yifan Yang, Jiajun Zhou, Ngai Wong, Zheng Zhang
+
 ---
 
 This is the implementation for paper [LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models](https://arxiv.org/pdf/2402.11417.pdf). In this paper,
@@ -18,13 +20,13 @@ which could be easily plugged-in for most widely used models (see Quickstart and
 
 <h1> <p>🤗 News</p></h1>
 
-03/17/2023: The version 0.1.0 package of loretta methods is out, which helps to implement
+**03/17/2023:** The version 0.1.0 package of loretta methods is out, which helps to implement
 the LoRETTA_adp and LoRETTA_rep methods with lines of code. Try it by installing with `pip install loretta`
 
-3/14/2023: Our paper 'LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models'
+**3/14/2023:** Our paper 'LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models'
 has been accepted by the NAACL 2024 main conference
 
-02/20/2023: The draft code for reproducing experiments in LoRETTA paper is out. 
+**02/20/2023:** The draft code for reproducing experiments in LoRETTA paper is out. 
 
 
 Quickstart
