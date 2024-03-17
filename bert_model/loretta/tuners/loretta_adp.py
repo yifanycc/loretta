@@ -1,18 +1,15 @@
 import importlib
 import math
 import re
-import warnings
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import List, Optional, Union
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from ..utils import PeftConfig, PeftType, transpose
+from ..utils import PeftConfig, PeftType, config_class, TRANSFORMERS_HIDDEN_SIZE_TO_TENSOR_SHAPE, TaskType, TRANSFORMERS_HIDDEN_SIZE_TO_CLS_TENSOR_SHAPE
 from transformers.activations import ACT2FN
-from tensor_layers.layers import wrapped_linear_layers
+from ..tensor_layers.layers import wrapped_linear_layers
 
 TRANSFORMERS_MODELS_TO_ADAPTER_TYPE_MAPPING = {
     "bloom": {"dense_h_to_4h": "mh_adapter", "dense_4h_to_h": "output_adapter"},
@@ -21,21 +18,19 @@ TRANSFORMERS_MODELS_TO_ADAPTER_TYPE_MAPPING = {
     "llama": {"gate_proj": "mh_adapter", "up_proj":"mh_adapter", "down_proj":"output_adapter"},
     "opt": {"fc1":"mh_adapter", "fc2":"output_adapter"},
     "chatglm": {"dense_h_to_4h": "mh_adapter", "dense_4h_to_h": "output_adapter"},
+    "deberta": {"dense": "output_adapter"},
+    "roberta": {"dense": "output_adapter"},
+    "bert": {"dense": "output_adapter"},
 }
 
 def is_bnb_available():
     return importlib.util.find_spec("bitsandbytes") is not None
 
-class config_class():
-    def __init__(self,
-                **kwargs):
-        for x in kwargs:
-            setattr(self, x, kwargs.get(x))
 if is_bnb_available():
     import bitsandbytes as bnb
 
 @dataclass
-class BottleneckConfig(PeftConfig):
+class LorettaAdpConfig(PeftConfig):
     """
     This is the configuration class to store the configuration of a [`~peft_local_tensor.Bottleneck`].
 
@@ -70,7 +65,8 @@ class BottleneckConfig(PeftConfig):
     scaling: Union[float, str] = 1.0
     bias: str = field(default="none", metadata={"help": "Bias type for Bottleneck. Can be 'none', 'all' or 'adapter_only'"})
     init_weights: str = field(default="bert", metadata={"help": "Initialization method for the weights of the adapter modules."})
-    tensorized: bool = False
+    tensorized: bool = True
+    tensor_rank: int = 5
     modules_to_save: Optional[List[str]] = field(
         default=None,
         metadata={
@@ -84,7 +80,7 @@ class BottleneckConfig(PeftConfig):
         self.peft_type = PeftType.BOTTLENECK
 
 
-class BottleneckModel(torch.nn.Module):
+class LorettaAdpModel(torch.nn.Module):
     """
     Creates Bottleneck adapter model for a pretrained trainsformers model.
 
@@ -94,21 +90,7 @@ class BottleneckModel(torch.nn.Module):
     
     Returns:
         `torch.nn.Module`: The Bottleneck adapter model.
-    
-    Example::
 
-        >>> from transformers import AutoModelForCausalLM, BottleneckConfig
-        >>> from peft_local_tensor import BottleneckModel, BottleneckConfig
-        >>> config = BottleneckConfig(
-            peft_type="BOTTLNECK", task="CAUSAL_LM", target_modules=["gate_proj", "up_proj", "down_proj"],
-            bottleneck_size=256, non_linearity="tanh",
-        )
-        >>> model = AutoModelForCausalLM.from_pretrained("decapoda-research/llama-7b-hf") 
-        >>> bottleneck_model = BottleneckModel(config, model)
-
-    **Attribute**:
-        - **model** (`transformers.PreTrainedModel`): The pretrained model to be adapted.
-        - **peft_config** (`BottleneckConfig`): The configuration of the Bottleneck adapter.
     """
 
     def __init__(self, config, model):
@@ -116,7 +98,7 @@ class BottleneckModel(torch.nn.Module):
         self.model = model
         self.peft_config = config
         self._find_and_replace()
-        mark_only_adapter_as_trainable(self.model, self.peft_config.bias)
+        mark_adapter_layernorm_cls_trainable(self.model, self.peft_config.task_type, self.peft_config.tensor_rank, self.peft_config.bias)
         self.forward = self.model.forward
 
     def _find_and_replace(self):
@@ -171,9 +153,9 @@ class BottleneckModel(torch.nn.Module):
                 elif isinstance(target, torch.nn.Linear):
                     if adapter_type == "mh_adapter":
                         new_module = Linear(target.in_features, target.in_features,\
-                                            tensorized=self.peft_config.tensorized, bias=bias, **kwargs)
+                                            tensorized=self.peft_config.tensorized, bias=bias, tensor_rank=self.peft_config.tensor_rank, **kwargs)
                     elif adapter_type == "output_adapter":
-                        new_module = Linear(target.out_features, target.out_features, tensorized=self.peft_config.tensorized, bias=bias, **kwargs)
+                        new_module = Linear(target.out_features, target.out_features, tensorized=self.peft_config.tensorized, tensor_rank=self.peft_config.tensor_rank, bias=bias, **kwargs)
                     elif adapter_type == "parallel_adapter":
                         new_module = Linear(target.in_features, target.out_features, bias=bias, **kwargs)
                 self._replace_module(parent, target_name, new_module, target)
@@ -244,12 +226,24 @@ class BottleneckModel(torch.nn.Module):
 
 # Copy from lora.py
 # had to adapt it for `lora_only` to work 
-def mark_only_adapter_as_trainable(model: nn.Module, bias: str = "none") -> None:
+def mark_adapter_layernorm_cls_trainable(model: nn.Module, task_type, tensor_rank, bias: str = "none",) -> None:
+    """
+    Mark trainable part:
+    - layernorm: trainable for all supported models
+    - adapters: trainable for all supported models
+    - classifiers: tensorized the dense layer and mark trainable when task_type=TaskType.SEQ_CLS
+    Args:
+        model:
+        bias:
+
+    Returns:
+
+    """
     for n, p in model.named_parameters():
         if "adapter_" not in n:
             p.requires_grad = False
     if bias == "none":
-        return
+        pass
     elif bias == "all":
         for n, p in model.named_parameters():
             if "bias" in n:
@@ -260,7 +254,23 @@ def mark_only_adapter_as_trainable(model: nn.Module, bias: str = "none") -> None
                 m.bias.requires_grad = True
     else:
         raise NotImplementedError
-
+    # mark layer-norm trainable
+    for name, param in model.named_parameters():
+        if "Norm" in name:
+            param.requires_grad = True
+    # mark cls trainable and tensorized
+    if task_type == TaskType.SEQ_CLS:
+        tensor_shape = TRANSFORMERS_HIDDEN_SIZE_TO_CLS_TENSOR_SHAPE[model.config.hidden_size]
+        tensor_rank = tensor_rank
+        config_tensor = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
+        if 'deberta' in model.config.model_type:
+            model.pooler.dense = wrapped_linear_layers(in_features=model.config.hidden_size,
+                                                       out_features=model.config.hidden_size, tensorized=True,
+                                                       config=config_tensor)
+        elif 'roberta' in model.config.model_type:
+            model.classifier.dense = wrapped_linear_layers(in_features=model.config.hidden_size,
+                                                           out_features=model.config.hidden_size, tensorized=True,
+                                                           config=config_tensor)
 
 class AdapterLayer:
     def __init__(
@@ -296,6 +306,7 @@ class Linear(nn.Linear, AdapterLayer):
         scaling: Union[float, str],
         init_weights: str,
         tensorized: bool,
+        tensor_rank: int,
         **kwargs,
     ):
         nn.Linear.__init__(self, in_features, out_features, **kwargs)
@@ -309,19 +320,9 @@ class Linear(nn.Linear, AdapterLayer):
             self.adapter_scaling = scaling
         elif scaling == "learned":
             self.adapter_scaling = nn.Parameter(torch.ones(1))
-        # Actual trainable parameters
-        if in_features == 768:
-            # for deberta-base
-            tensor_shape = [8, 8, 12, 8, 8]
-        elif in_features == 1536:
-            # for deberta-xxl
-            tensor_shape = [4, 8, 8, 8, 8, 6]
-        elif in_features == 4096:
-            # tensor_shape = [16, 16, 16, 4, 4, 4]
-            tensor_shape_down = [16, 16, 16, 4, 4, 4]
-            tensor_shape_up = [4, 4, 4, 16, 16, 16]
-        tensor_rank = 5
-        # config_tensor = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
+        tensor_rank = tensor_rank
+        tensor_shape_down = TRANSFORMERS_HIDDEN_SIZE_TO_TENSOR_SHAPE[bottleneck_size][out_features]
+        tensor_shape_up = TRANSFORMERS_HIDDEN_SIZE_TO_TENSOR_SHAPE[bottleneck_size][in_features]
         config_tensor_down = config_class(shape=tensor_shape_down, ranks=tensor_rank, set_scale_factors=False)
         config_tensor_up = config_class(shape=tensor_shape_up, ranks=tensor_rank, set_scale_factors=False)
         if tensorized:

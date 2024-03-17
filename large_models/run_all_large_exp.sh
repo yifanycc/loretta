@@ -9,8 +9,8 @@ export WANDB_START_METHOD="thread"
 
 # test examples (for SST2 task)
 
-#MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=loretta_adp EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
-MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=loretta_rep EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
+MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=loretta_adp EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
+#MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=loretta_rep EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
 #MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=lora EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
 #MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=adapters EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh
 #MODEL=meta-llama/Llama-2-7b-hf TASK=SST2 MODE=prompt EPOCH=0.01 BS=8 LR=1e-4 DEVICE=7 bash finetune.sh

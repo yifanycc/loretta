@@ -19,13 +19,12 @@ import warnings
 from dataclasses import asdict, dataclass, field
 from enum import Enum
 from typing import List, Optional, Union
-import tensorly as tl
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from transformers.pytorch_utils import Conv1D
-from tensor_layers.layers import wrapped_linear_layers
-import numpy as np
+
 from ..utils import PeftConfig, PeftType, transpose
 
 
@@ -36,15 +35,11 @@ def is_bnb_available():
 if is_bnb_available():
     import bitsandbytes as bnb
 
-class config_class():
-    def __init__(self,
-                **kwargs):
-        for x in kwargs:
-            setattr(self, x, kwargs.get(x))
+
 @dataclass
 class LoraConfig(PeftConfig):
     """
-    This is the configuration class to store the configuration of a [`~peft_local_tensor.Lora`].
+    This is the configuration class to store the configuration of a [`~peft_new.Lora`].
 
     Args:
         r (`int`): Lora attention dimension
@@ -105,7 +100,7 @@ class LoraModel(torch.nn.Module):
 
     Example::
 
-        >>> from transformers import AutoModelForSeq2SeqLM, LoraConfig >>> from peft_local_tensor import LoraModel, LoraConfig >>>
+        >>> from transformers import AutoModelForSeq2SeqLM, LoraConfig >>> from peft_new import LoraModel, LoraConfig >>>
         config = LoraConfig(
             peft_type="LORA", task_type="SEQ_2_SEQ_LM", r=8, lora_alpha=32, target_modules=["q", "v"],
             lora_dropout=0.01, )
@@ -306,19 +301,10 @@ class Linear(nn.Linear, LoraLayer):
         LoraLayer.__init__(self, r=r, lora_alpha=lora_alpha, lora_dropout=lora_dropout, merge_weights=merge_weights)
 
         self.fan_in_fan_out = fan_in_fan_out
-        tensor_shape_down = [8, 12, 8, 8]
-        tensor_shape_up = [8, 12, 8, 8]
-        tensor_rank = r
-        # config_tensor = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
-        config_tensor_down = config_class(shape=tensor_shape_down, ranks=tensor_rank, set_scale_factors=False)
-        config_tensor_up = config_class(shape=tensor_shape_up, ranks=tensor_rank, set_scale_factors=False)
-
         # Actual trainable parameters
         if r > 0:
-            self.lora_A = wrapped_linear_layers(in_features=768, out_features=8,
-                                                tensorized=True, bias=False, config=config_tensor_down)
-            self.lora_B = wrapped_linear_layers(in_features=8, out_features=768,
-                                                tensorized=True, bias=False, config=config_tensor_up)
+            self.lora_A = nn.Linear(in_features, r, bias=False)
+            self.lora_B = nn.Linear(r, out_features, bias=False)
             self.scaling = self.lora_alpha / self.r
             # Freezing the pre-trained weight matrix
             self.weight.requires_grad = False
@@ -329,10 +315,9 @@ class Linear(nn.Linear, LoraLayer):
     def reset_parameters(self):
         nn.Linear.reset_parameters(self)
         if hasattr(self, "lora_A"):
-            pass
             # initialize A the same way as the default for nn.Linear and B to zero
-            # nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
-            # nn.init.zeros_(self.lora_B.weight)
+            nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
+            nn.init.zeros_(self.lora_B.weight)
 
     def train(self, mode: bool = True):
         nn.Linear.train(self, mode)
@@ -371,8 +356,7 @@ class Linear(nn.Linear, LoraLayer):
         elif self.r > 0 and not self.merged:
             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
             if self.r > 0:
-                # result += self.lora_B(self.lora_A(self.lora_dropout(x.to(self.lora_A.weight.dtype)))) * self.scaling
-                result += self.lora_B(self.lora_A(self.lora_dropout(x))) * self.scaling
+                result += self.lora_B(self.lora_A(self.lora_dropout(x.to(self.lora_A.weight.dtype)))) * self.scaling
         else:
              result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
 
@@ -401,50 +385,16 @@ class MergedLinear(nn.Linear, LoraLayer):
             raise ValueError("The length of enable_lora must divide out_features")
         self.enable_lora = enable_lora
         self.fan_in_fan_out = fan_in_fan_out
-        # if in_features == 768:
-        #     # for deberta-base
-        #     tensor_shape_down = [8, 8, 12, 8, 8]
-        #     tensor_shape_up = [8, 8, 12, 8, 8]
-        # elif in_features == 1536:
-        #     # for deberta-xxl
-        #     tensor_shape_down = [4, 8, 8, 8, 8, 6]
-        #     tensor_shape_up = [4, 8, 8, 8, 8, 6]
-        # elif in_features == 4096:
-        #     # tensor_shape = [16, 16, 16, 4, 4, 4]
-        #     tensor_shape_down = [16, 16, 16, 4, 4, 4]
-        #     tensor_shape_up = [4, 4, 4, 16, 16, 16]
-        tensor_shape_down = [8, 12, 8, 8]
-        tensor_shape_up = [8, 8, 8, 4, 9]
-        tensor_rank = r
-        # config_tensor = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
-        config_tensor_down = config_class(shape=tensor_shape_down, ranks=tensor_rank, set_scale_factors=False)
-        config_tensor_up = config_class(shape=tensor_shape_up, ranks=tensor_rank, set_scale_factors=False)
         # Actual trainable parameters
         if r > 0 and any(enable_lora):
-            # self.lora_A = nn.Linear(in_features, r * sum(enable_lora), bias=False)
-            # self.lora_B = nn.Conv1d(
-            #     r * sum(enable_lora),
-            #     out_features // len(enable_lora) * sum(enable_lora),
-            #     kernel_size=1,
-            #     groups=2,
-            #     bias=False,
-            # )
-            # print(f'enable_lora {enable_lora}')
-            print(f'in {in_features} out {out_features}')
-            self.lora_A = wrapped_linear_layers(in_features=768, out_features=8,
-                                                      tensorized=True, bias=False, config=config_tensor_down)
-            self.lora_B = wrapped_linear_layers(in_features=8, out_features=2304,
-                                                    tensorized=True, bias=False, config=config_tensor_up)
-            # factors = []
-            # for factor in self.lora_A.layer.tensor.factors:
-            #     factors.append(factor.detach().cpu().numpy())
-            # A_rec = tl.tt_tensor.tt_to_tensor(factors).reshape(768, 8)
-            #
-            # factors = []
-            # for factor in self.lora_B.layer.tensor.factors:
-            #     factors.append(factor.detach().cpu().numpy())
-            # B_rec = tl.tt_tensor.tt_to_tensor(factors).reshape(8, 2304)
-            # print(f'init mean {np.mean(A_rec @ B_rec)}')
+            self.lora_A = nn.Linear(in_features, r * sum(enable_lora), bias=False)
+            self.lora_B = nn.Conv1d(
+                r * sum(enable_lora),
+                out_features // len(enable_lora) * sum(enable_lora),
+                kernel_size=1,
+                groups=2,
+                bias=False,
+            )
             self.scaling = self.lora_alpha / self.r
             # Freezing the pre-trained weight matrix
             self.weight.requires_grad = False
@@ -459,17 +409,14 @@ class MergedLinear(nn.Linear, LoraLayer):
     def reset_parameters(self):
         nn.Linear.reset_parameters(self)
         if hasattr(self, "lora_A"):
-            pass
             # initialize A the same way as the default for nn.Linear and B to zero
-            # nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
-            # nn.init.zeros_(self.lora_B.weight)
-            # for param in self.lora_B.layer.tensor.factors:
-            #     param.data = torch.zeros_like(param.data)
+            nn.init.kaiming_uniform_(self.lora_A.weight, a=math.sqrt(5))
+            nn.init.zeros_(self.lora_B.weight)
 
     def zero_pad(self, x):
         result = x.new_zeros((*x.shape[:-1], self.out_features))
         result = result.view(-1, self.out_features)
-        result[:, :2304] = x.reshape(-1, 2304)
+        result[:, self.lora_ind] = x.reshape(-1, self.out_features // len(self.enable_lora) * sum(self.enable_lora))
         return result.view((*x.shape[:-1], self.out_features))
 
     def train(self, mode: bool = True):
@@ -532,11 +479,9 @@ class MergedLinear(nn.Linear, LoraLayer):
         else:
             result = F.linear(x, transpose(self.weight, self.fan_in_fan_out), bias=self.bias)
             if self.r > 0:
-                after_A = self.lora_A(self.lora_dropout(x))
-                after_B = self.lora_B(after_A)
-                # result += self.zero_pad(after_B) * self.scaling
-                # print(f'check {after_B[0] * self.scaling}')
-                result += after_B * self.scaling
+                after_A = self.lora_A(self.lora_dropout(x.to(self.lora_A.weight.dtype)))
+                after_B = self.lora_B(after_A.transpose(-2, -1)).transpose(-2, -1)
+                result += self.zero_pad(after_B) * self.scaling
         result = result.to(previous_dtype)
 
         return result
@@ -674,7 +619,6 @@ if is_bnb_available():
                 else:
                     after_A = self.lora_A(self.lora_dropout(x))
                     after_B = self.lora_B(after_A.transpose(-2, -1)).transpose(-2, -1)
-                    output = after_B * self.scaling
-                    # output = self.zero_pad(after_B) * self.scaling
+                    output = self.zero_pad(after_B) * self.scaling
                     result += output
             return result

@@ -1,17 +1,3 @@
-# coding=utf-8
-# Copyright 2023-present the HuggingFace Inc. team.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
 import importlib
 import math
 import re
@@ -25,8 +11,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers.pytorch_utils import Conv1D
 from ..tensor_layers.layers import wrapped_linear_layers
-
-from ..utils import PeftConfig, PeftType, transpose
+from ..utils import PeftConfig, PeftType, config_class, TRANSFORMERS_HIDDEN_SIZE_TO_TENSOR_SHAPE, transpose, TRANSFORMERS_HIDDEN_SIZE_TO_CLS_TENSOR_SHAPE
 
 
 def is_bnb_available():
@@ -36,11 +21,6 @@ def is_bnb_available():
 if is_bnb_available():
     import bitsandbytes as bnb
 
-class config_class():
-    def __init__(self,
-                **kwargs):
-        for x in kwargs:
-            setattr(self, x, kwargs.get(x))
 @dataclass
 class LorettaRepConfig(PeftConfig):
     """
@@ -68,6 +48,7 @@ class LorettaRepConfig(PeftConfig):
             "For example, ['q', 'v'] or '.*decoder.*(SelfAttention|EncDecAttention).*(q|v)$' "
         },
     )
+    tensor_rank: int = 5
     lora_alpha: int = field(default=None, metadata={"help": "Lora alpha"})
     lora_dropout: float = field(default=None, metadata={"help": "Lora dropout"})
     merge_weights: bool = field(
@@ -103,17 +84,6 @@ class LorettaRepModel(torch.nn.Module):
     Returns:
         `torch.nn.Module`: The Lora model.
 
-    Example::
-
-        >>> from transformers import AutoModelForSeq2SeqLM, LoraConfig >>> from peft_local_tensor import LoraModel, LoraConfig >>>
-        config = LoraConfig(
-            peft_type="LORA", task_type="SEQ_2_SEQ_LM", r=8, lora_alpha=32, target_modules=["q", "v"],
-            lora_dropout=0.01, )
-        >>> model = AutoModelForSeq2SeqLM.from_pretrained("t5-base") >>> lora_model = LoraModel(config, model)
-
-    **Attributes**:
-        - **model** ([`transformers.PreTrainedModel`]) -- The model to be adapted.
-        - **peft_config** ([`LoraConfig`]): The configuration of the Lora model.
     """
 
     def __init__(self, config, model):
@@ -121,7 +91,7 @@ class LorettaRepModel(torch.nn.Module):
         self.peft_config = config
         self.model = model
         self._find_and_replace()
-        mark_only_lora_as_trainable(self.model, self.peft_config.bias)
+        mark_lora_layernorm_cls_trainable(self.model, self.peft_config.task_type, self.peft_config.tensor_rank, self.peft_config.bias)
         self.forward = self.model.forward
 
     def _find_and_replace(self):
@@ -167,7 +137,7 @@ class LorettaRepModel(torch.nn.Module):
                         kwargs.update({"enable_lora": self.peft_config.enable_lora})
                         new_module = MergedLinear8bitLt(target.in_features, target.out_features, bias=bias, **kwargs)
                 elif isinstance(target, torch.nn.Linear) and self.peft_config.enable_lora is None:
-                    new_module = Linear(target.in_features, target.out_features, bias=bias, **kwargs)
+                    new_module = Linear(target.in_features, target.out_features, tensor_rank=self.peft_config.tensor_rank, bias=bias, **kwargs)
                 elif self.peft_config.enable_lora is not None:
                     kwargs.update({"enable_lora": self.peft_config.enable_lora})
                     if isinstance(target, Conv1D):
@@ -182,7 +152,7 @@ class LorettaRepModel(torch.nn.Module):
                                 "Setting fan_in_fan_out to False."
                             )
                             kwargs["fan_in_fan_out"] = self.peft_config.fan_in_fan_out = False
-                    new_module = MergedLinear(in_features, out_features, bias=bias, **kwargs)
+                    new_module = MergedLinear(in_features, out_features, tensor_rank=self.peft_config.tensor_rank, bias=bias, **kwargs)
                 self._replace_module(parent, target_name, new_module, target)
         if not is_target_modules_in_base_model:
             raise ValueError(
@@ -250,12 +220,12 @@ class LorettaRepModel(torch.nn.Module):
 
 
 # had to adapt it for `lora_only` to work
-def mark_only_lora_as_trainable(model: nn.Module, bias: str = "none") -> None:
+def mark_lora_layernorm_cls_trainable(model: nn.Module, task_type, tensor_rank, bias: str = "none") -> None:
     for n, p in model.named_parameters():
         if "lora_" not in n:
             p.requires_grad = False
     if bias == "none":
-        return
+        pass
     elif bias == "all":
         for n, p in model.named_parameters():
             if "bias" in n:
@@ -266,7 +236,23 @@ def mark_only_lora_as_trainable(model: nn.Module, bias: str = "none") -> None:
                 m.bias.requires_grad = True
     else:
         raise NotImplementedError
-
+        # mark layer-norm trainable
+    for n, p in model.named_parameters():
+        if "Norm" in n:
+            p.requires_grad = True
+    # mark cls trainable and tensorized
+    if task_type == 'SEQ_CLS':
+        tensor_shape = TRANSFORMERS_HIDDEN_SIZE_TO_CLS_TENSOR_SHAPE[model.config.hidden_size]
+        tensor_rank = tensor_rank
+        config_tensor = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
+        if 'deberta' in model.config.model_type:
+            model.pooler.dense = wrapped_linear_layers(in_features=model.config.hidden_size,
+                                                       out_features=model.config.hidden_size, tensorized=True,
+                                                       config=config_tensor)
+        elif 'roberta' in model.config.model_type:
+            model.classifier.dense = wrapped_linear_layers(in_features=model.config.hidden_size,
+                                                           out_features=model.config.hidden_size, tensorized=True,
+                                                           config=config_tensor)
 
 class LoraLayer:
     def __init__(
@@ -300,6 +286,7 @@ class Linear(nn.Linear, LoraLayer):
         lora_dropout: float = 0.0,
         fan_in_fan_out: bool = False,  # Set this to True if the layer to replace stores weight like (fan_in, fan_out)
         merge_weights: bool = True,
+        tensor_rank: int = 8,
         **kwargs,
     ):
         nn.Linear.__init__(self, in_features, out_features, **kwargs)
@@ -308,58 +295,14 @@ class Linear(nn.Linear, LoraLayer):
         self.fan_in_fan_out = fan_in_fan_out
         # Actual trainable parameters
         if r > 0:
-
-            if in_features == 4096:
-                # if r == 8:
-                #     tensor_shape_down = [8, 8, 8, 8, 8]
-                #     tensor_shape_up = [8, 8, 8, 8, 8]
-                #     tensor_rank = r
-                #     # config_tens3or = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
-                #     config_tensor_down = config_class(shape=tensor_shape_down, ranks=tensor_rank, set_scale_factors=False)
-                #     config_tensor_up = config_class(shape=tensor_shape_up, ranks=tensor_rank, set_scale_factors=False)
-                # elif r == 32:
-                #     tensor_shape_down = [8, 8, 8, 8, 8, 4]
-                #     tensor_shape_up = [4, 8, 8, 8, 8, 8]
-                #     tensor_rank = r
-                #     # config_tensor = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
-                #     config_tensor_down = config_class(shape=tensor_shape_down, ranks=tensor_rank, set_scale_factors=False)
-                #     config_tensor_up = config_class(shape=tensor_shape_up, ranks=tensor_rank, set_scale_factors=False)
-                # elif r == 16:
-                tensor_shape_down = [8, 8, 8, 8, 4, 4]
-                tensor_shape_up = [4, 4, 8, 8, 8, 8]
-                tensor_rank = r
-                # config_tensor = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
-                config_tensor_down = config_class(shape=tensor_shape_down, ranks=tensor_rank, set_scale_factors=False)
-                config_tensor_up = config_class(shape=tensor_shape_up, ranks=tensor_rank, set_scale_factors=False)
-            elif out_features == 1024:
-                # for deberta-base
-                tensor_shape_down = [8, 8, 8, 8, 4]
-                tensor_shape_up = [16, 8, 16, 8, 8]
-                tensor_rank = r
-                # config_tens3or = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
-                config_tensor_down = config_class(shape=tensor_shape_down, ranks=tensor_rank, set_scale_factors=False)
-                config_tensor_up = config_class(shape=tensor_shape_up, ranks=tensor_rank, set_scale_factors=False)
-
-            elif in_features == 5120:
-
-                tensor_shape_down = [5, 8, 16, 8, 16]
-                tensor_shape_up = [16, 8, 16, 8, 5]
-                tensor_rank = r
-                # config_tens3or = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
-                config_tensor_down = config_class(shape=tensor_shape_down, ranks=tensor_rank, set_scale_factors=False)
-                config_tensor_up = config_class(shape=tensor_shape_up, ranks=tensor_rank, set_scale_factors=False)
-            elif out_features == 8192:
-
-                tensor_shape_down = [8, 8, 16, 8, 16]
-                tensor_shape_up = [16, 8, 16, 8, 8]
-                tensor_rank = r
-                # config_tens3or = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
-                config_tensor_down = config_class(shape=tensor_shape_down, ranks=tensor_rank, set_scale_factors=False)
-                config_tensor_up = config_class(shape=tensor_shape_up, ranks=tensor_rank, set_scale_factors=False)
-            print(f'in {in_features} our {out_features}')
-            self.lora_A = wrapped_linear_layers(in_features=in_features, out_features=16,
+            tensor_rank = tensor_rank
+            tensor_shape_down = TRANSFORMERS_HIDDEN_SIZE_TO_TENSOR_SHAPE[r][out_features]
+            tensor_shape_up = TRANSFORMERS_HIDDEN_SIZE_TO_TENSOR_SHAPE[r][in_features]
+            config_tensor_down = config_class(shape=tensor_shape_down, ranks=tensor_rank, set_scale_factors=False)
+            config_tensor_up = config_class(shape=tensor_shape_up, ranks=tensor_rank, set_scale_factors=False)
+            self.lora_A = wrapped_linear_layers(in_features=in_features, out_features=r,
                                                 tensorized=True, bias=False, config=config_tensor_up)
-            self.lora_B = wrapped_linear_layers(in_features=16, out_features=out_features,
+            self.lora_B = wrapped_linear_layers(in_features=r, out_features=out_features,
                                                 tensorized=True, bias=False, config=config_tensor_down)
 
             # self.lora_A = nn.Linear(in_features, r, bias=False)
@@ -430,9 +373,6 @@ class Linear(nn.Linear, LoraLayer):
 
 class MergedLinear(nn.Linear, LoraLayer):
     # Lora implemented in a dense layer
-    """
-    for model with merged linear to represent the q, k, v (like deberta)
-    """
     def __init__(
         self,
         in_features: int,
@@ -443,6 +383,7 @@ class MergedLinear(nn.Linear, LoraLayer):
         enable_lora: List[bool] = [False],
         fan_in_fan_out: bool = False,
         merge_weights: bool = True,
+        tensor_rank: int = 8,
         **kwargs,
     ):
         nn.Linear.__init__(self, in_features, out_features, **kwargs)
@@ -452,28 +393,16 @@ class MergedLinear(nn.Linear, LoraLayer):
         self.enable_lora = enable_lora
         self.fan_in_fan_out = fan_in_fan_out
         # Actual trainable parameters
-        tensor_shape_down = [8, 12, 8, 8]
-        tensor_shape_up = [8, 8, 8, 4, 9]
-        tensor_rank = r
-        # config_tensor = config_class(shape=tensor_shape, ranks=tensor_rank, set_scale_factors=False)
+        tensor_rank = tensor_rank
+        tensor_shape_down = TRANSFORMERS_HIDDEN_SIZE_TO_TENSOR_SHAPE[r][out_features]
+        tensor_shape_up = TRANSFORMERS_HIDDEN_SIZE_TO_TENSOR_SHAPE[r][in_features]
         config_tensor_down = config_class(shape=tensor_shape_down, ranks=tensor_rank, set_scale_factors=False)
         config_tensor_up = config_class(shape=tensor_shape_up, ranks=tensor_rank, set_scale_factors=False)
         if r > 0 and any(enable_lora):
-            # self.lora_A = nn.Linear(in_features, r * sum(enable_lora), bias=False)
-            # self.lora_B = nn.Conv1d(
-            #     r * sum(enable_lora),
-            #     out_features // len(enable_lora) * sum(enable_lora),
-            #     kernel_size=1,
-            #     groups=2,
-            #     bias=False,
-            # )
-
-            # print(f'in {in_features} out {out_features}')
-            self.lora_A = wrapped_linear_layers(in_features=768, out_features=8,
-                                                tensorized=True, bias=False, config=config_tensor_down)
-            self.lora_B = wrapped_linear_layers(in_features=8, out_features=2304,
+            self.lora_A = wrapped_linear_layers(in_features=in_features, out_features=r,
                                                 tensorized=True, bias=False, config=config_tensor_up)
-
+            self.lora_B = wrapped_linear_layers(in_features=r, out_features=out_features,
+                                                tensorized=True, bias=False, config=config_tensor_down)
             self.scaling = self.lora_alpha / self.r
             # Freezing the pre-trained weight matrix
             self.weight.requires_grad = False

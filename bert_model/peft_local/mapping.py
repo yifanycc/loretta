@@ -67,6 +67,9 @@ TRANSFORMERS_MODELS_TO_BOTTLENECK_TARGET_MODULES_MAPPING = {
     "llama": ["gate_proj", "up_proj", "down_proj"],
     "opt": ["fc1", "fc2"],
     "chatglm": ["dense_h_to_4h", "dense_4h_to_h"],
+    "deberta": r".*\.output\.dense",
+    "roberta": r".*\.output\.dense",
+    "bert": r".*\.output\.dense",
 }
 
 TRANSFORMERS_MODELS_TO_ADAPTERP_TARGET_MODULES_MAPPING = {
