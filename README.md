@@ -98,7 +98,7 @@ Environment
 Generally, the package is implemented base on `torch==2.1.2`, `python=3.10.13` and `transformers==4.38.2`. For a detailed
 list of environments we use, check `requirements.txt` or `environment.yml` files we provided.
 
-Detailed Examples
+Examples for reproducing the results in the paper
 ---
 We provide two detailed examples to reproduce the experimental results in our paper, which are stored in folder `bert_model`
 and `large_models`. To reproduce our experiments, following the instructions below:
