@@ -40,16 +40,16 @@ pip install loretta
 
 Here is a quick example about how to use the loretta package to wrap a huggingface style model with the LoRETTA adapters,
 by using the provided `LorettaAdpConfig`,  `LorettaRepConfig`, and `get_peft_model` classes and functions. The general usage
-follows the similar logic as the PEFT library. 
+follows the similar logic as the PEFT library. We mark a symbol `+` for the code you need to add. 
 
 
 For LoRETTA_adp (we recommend LoRETTA_adp for most cases):
 ```angular2html
 from transformers import AutoModelForCausalLM
-from loretta import LorettaAdpConfig, LorettaRepConfig, get_peft_model, TaskType
++ from loretta import LorettaAdpConfig, LorettaRepConfig, get_peft_model, TaskType
 model_name_or_path = "meta-llama/Llama-2-7b-hf"
 tokenizer_name_or_path = "meta-llama/Llama-2-7b-hf"
-peft_config = LorettaAdpConfig(
++ peft_config = LorettaAdpConfig(
                 bottleneck_size=64,
                 non_linearity="relu",
                 adapter_dropout=0.0,
@@ -60,17 +60,17 @@ peft_config = LorettaAdpConfig(
                 tensor_rank=5,
             )
 model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
-model = get_peft_model(model, peft_config)
++ model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
 ```
 For LoRETTA_rep:
 
 ```angular2html
 from transformers import AutoModelForCausalLM
-from loretta import LorettaAdpConfig, LorettaRepConfig, get_peft_model, TaskType
++ from loretta import LorettaAdpConfig, LorettaRepConfig, get_peft_model, TaskType
 model_name_or_path = "meta-llama/Llama-2-7b-hf"
 tokenizer_name_or_path = "meta-llama/Llama-2-7b-hf"
-peft_config = LorettaRepConfig(
++ peft_config = LorettaRepConfig(
             r=8, # bottleneck
             lora_alpha=our_args.rep_alpha,
             target_modules=our_args.target_modules,
@@ -79,9 +79,8 @@ peft_config = LorettaRepConfig(
             task_type=our_args.task_type,
             tensor_rank=our_args.tensor_rank
         )
-        model = get_peft_model(model, peft_config)
 model = AutoModelForCausalLM.from_pretrained(model_name_or_path)
-model = get_peft_model(model, peft_config)
++ model = get_peft_model(model, peft_config)
 model.print_trainable_parameters()
 ```
 
