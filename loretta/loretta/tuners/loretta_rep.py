@@ -238,7 +238,7 @@ def mark_lora_layernorm_cls_trainable(model: nn.Module, task_type, tensor_rank, 
         raise NotImplementedError
         # mark layer-norm trainable
     for n, p in model.named_parameters():
-        if "Norm" in n:
+        if ("norm" in n) or ('Norm' in n):
             p.requires_grad = True
     # mark cls trainable and tensorized
     if task_type == 'SEQ_CLS':
