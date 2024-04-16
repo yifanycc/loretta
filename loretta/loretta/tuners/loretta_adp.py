@@ -256,7 +256,7 @@ def mark_adapter_layernorm_cls_trainable(model: nn.Module, task_type, tensor_ran
         raise NotImplementedError
     # mark layer-norm trainable
     for name, param in model.named_parameters():
-        if "Norm" in name:
+        if ("norm" in n) or ('Norm' in n):
             param.requires_grad = True
     # mark cls trainable and tensorized
     if task_type == TaskType.SEQ_CLS:
