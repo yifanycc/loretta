@@ -19,7 +19,6 @@ if [ "$MODE" == "prefix" ]; then
     EXTRA_ARGS="--num_prefix 5 --no_reparam --prefix_init_by_real_act"
     TYPE="prefix"
 elif [ "$MODE" == "lora" ]; then
-    EXTRA_ARGS="--lora"
     TYPE="lora"
 elif [ "$MODE" == "loretta_rep" ]; then
     TYPE="loretta_rep"
