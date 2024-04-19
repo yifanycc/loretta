@@ -49,7 +49,7 @@ class OurArguments(TrainingArguments):
 
     # parameter setup for PEFT methods
     # LoRETTA
-    tensor_rank: int = 5
+    tensor_rank: int = 8
     target_modules: List[str] = None # set to be None when use official support model
     task_type: str = 'CAUSAL_LM' # choose from "SEQ_CLS", "SEQ_2_SEQ_LM", "CAUSAL_LM", "TOKEN_CLS"
     # LoRETTA_adp
@@ -65,7 +65,7 @@ class OurArguments(TrainingArguments):
     num_prefix: int = 5 # number of prefixes to use
     no_reparam: bool = True # do not use reparameterization trick
     prefix_init_by_real_act: bool = True # initialize prefix by real activations of random words
-    rank: int = 5
+    rank: int = 8
     # LoRA
     tuning_type: str = 'ft'
     lora_alpha: int = 16 # alpha in LoRA
