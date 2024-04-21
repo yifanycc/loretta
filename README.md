@@ -3,7 +3,7 @@
 </p>
 
 # Source Code for paper 'LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models'
-2024 Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL 2024)
+2024 Annual Conference of the North American Chapter of the Association for Computational Linguistics (NAACL 2024 Oral)
 
 Yifan Yang, Jiajun Zhou, Ngai Wong, Zheng Zhang
 
@@ -19,6 +19,8 @@ a great extent. Our implementation is based on the latest huggingface [PEFT](htt
 which could be easily plugged in for the most widely used models (see Quickstart and Model Support sections). 
 
 <h1> <p>🤗 News</p></h1>
+
+**04/21/2024:** Our paper is selected to be an oral paper at NAACL 24 and version 0.1.3 of loretta package has been updated in PyPI, which fix the bugs in the previous version.
 
 **03/17/2024:** The version 0.1.0 package of LoRETTA methods is out, which helps to implement
 the LoRETTA_adp and LoRETTA_rep methods with lines of code. Try it by installing with `pip install loretta`
