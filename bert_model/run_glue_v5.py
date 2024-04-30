@@ -118,8 +118,16 @@ def main():
     set_seed(our_args.seed)
 
     # load pretrained model and wrapping model with PEFT methods
+    try:
+        num_labels = glue_tasks_num_labels[data_args.task_name]
+        output_mode = glue_output_modes[data_args.task_name]
+    except KeyError:
+        raise ValueError("Task not found: %s" % (data_args.task_name))
     config = AutoConfig.from_pretrained(
         model_args.config_name if model_args.config_name else model_args.model_name_or_path,
+        num_labels=num_labels,
+        finetuning_task=data_args.task_name,
+        cache_dir=model_args.cache_dir,
     )
 
     model = AutoModelForSequenceClassification.from_pretrained(
