@@ -121,12 +121,11 @@ Note: The code is implemented based on an elder version of the [PEFT library](ht
 
 To use Loretta in your publication, please cite it by using the following BibTeX entry.
 ```angular2html
-@misc{yang2024loretta,
-      title={LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models}, 
-      author={Yifan Yang and Jiajun Zhou and Ngai Wong and Zheng Zhang},
-      year={2024},
-      eprint={2402.11417},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL}
+@inproceedings{yang2024loretta,
+  title={LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models},
+  author={Yang, Yifan and Zhou, Jiajun and Wong, Ngai and Zhang, Zheng},
+  booktitle={Proceedings of the 2024 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies (Volume 1: Long Papers)},
+  pages={3161--3176},
+  year={2024}
 }
 ```
