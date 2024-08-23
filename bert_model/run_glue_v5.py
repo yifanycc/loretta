@@ -116,7 +116,17 @@ def main():
                      + str(our_args.tuning_type) + '-lorar-' + str(our_args.tensor_rank) + '-' + datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     wandb.init(project=f"<{our_args.wandb_project}>", name=wandb_run_name)
     set_seed(our_args.seed)
-
+    task_name_map = {
+        'sst2': 'sst-2',
+        'stsb': 'sts-b',
+        'mnli': 'mnli',
+        'cola': 'cola',
+        'qqp': 'qqp',
+        'qnli': 'qnli',
+        'pte': 'rte',
+        'mrpc': 'mrpc',
+    }
+    data_args.task_name = task_name_map[data_args.task_name]
     # load pretrained model and wrapping model with PEFT methods
     try:
         num_labels = glue_tasks_num_labels[data_args.task_name]
@@ -219,17 +229,6 @@ def main():
 
     # process the dataset
     tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path)
-    task_name_map = {
-        'sst2': 'sst-2',
-        'stsb': 'sts-b',
-        'mnli': 'mnli',
-        'cola': 'cola',
-        'qqp': 'qqp',
-        'qnli': 'qnli',
-        'pte': 'rte',
-        'mrpc': 'mrpc',
-    }
-    data_args.task_name = task_name_map[data_args.task_name]
     output_mode = glue_output_modes[data_args.task_name]
     dataset = load_dataset("glue", data_args.task_name.replace("-", ""))
     if data_args.task_name is not None:
