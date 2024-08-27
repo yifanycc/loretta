@@ -9,7 +9,7 @@ Yifan Yang, Jiajun Zhou, Ngai Wong, Zheng Zhang
 
 ---
 
-This is the implementation for the paper [LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models](https://arxiv.org/pdf/2402.11417.pdf). In this paper,
+This is the implementation for the paper [LoRETTA: Low-Rank Economic Tensor-Train Adaptation for Ultra-Low-Parameter Fine-Tuning of Large Language Models](https://aclanthology.org/2024.naacl-long.174.pdf). In this paper,
 we propose an ultra-parameter efficient fine-tuning method based on Tensor-train decomposition (LoRETTA), which reduces the trainable parameters for up to 100x on the Llama-2-7B model compared with other widely used 
 PEFT methods. The paper contains two types of LoRETTA methods, called LoRETTA_adp and LoRETTA_rep, respectively. The LoRETTA_adp
 method is suggested to be used in most cases, providing on-par or better accuracy with much less trainable parameters. The 
